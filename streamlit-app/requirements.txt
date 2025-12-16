@@ -1,0 +1,7 @@
+# DK Aviation Flight Insights - Local Development Dependencies
+streamlit>=1.28.0
+snowflake-connector-python>=3.0.0
+pandas>=2.0.0
+plotly>=5.18.0
+cryptography>=41.0.0  # Required for key-pair authentication
+
