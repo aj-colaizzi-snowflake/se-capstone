@@ -281,33 +281,336 @@ def get_recent_flights(limit: int = 1000):
     """
     return run_query(query)
 
+@st.cache_data(ttl=600)
+def get_top_aircraft(limit: int = 10):
+    """Get most active aircraft by flight record count."""
+    query = f"""
+    SELECT 
+        TAIL_NUMBER,
+        TRIM(AIRCRAFT_MANUFACTURER) as AIRCRAFT_MANUFACTURER,
+        TRIM(AIRCRAFT_MODEL) as AIRCRAFT_MODEL,
+        TRIM(OWNER_NAME) as OWNER_NAME,
+        COUNT(*) as RECORD_COUNT,
+        MAX(RECORD_TS) as LAST_SEEN
+    FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+    WHERE TAIL_NUMBER IS NOT NULL
+    GROUP BY TAIL_NUMBER, AIRCRAFT_MANUFACTURER, AIRCRAFT_MODEL, OWNER_NAME
+    ORDER BY RECORD_COUNT DESC
+    LIMIT {limit}
+    """
+    return run_query(query)
+
+@st.cache_data(ttl=600)
+def get_manufacturer_list():
+    """Get list of all manufacturers with aircraft counts."""
+    query = """
+    SELECT 
+        TRIM(AIRCRAFT_MANUFACTURER) as MANUFACTURER,
+        COUNT(DISTINCT TAIL_NUMBER) as AIRCRAFT_COUNT
+    FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+    WHERE AIRCRAFT_MANUFACTURER IS NOT NULL
+    GROUP BY AIRCRAFT_MANUFACTURER
+    HAVING COUNT(DISTINCT TAIL_NUMBER) > 0
+    ORDER BY AIRCRAFT_COUNT DESC
+    """
+    return run_query(query)
+
+@st.cache_data(ttl=300)
+def get_aircraft_by_manufacturer(manufacturer: str):
+    """Get all aircraft for a specific manufacturer."""
+    query = f"""
+    SELECT DISTINCT
+        TAIL_NUMBER,
+        TRIM(AIRCRAFT_MODEL) as AIRCRAFT_MODEL,
+        AIRCRAFT_YEAR,
+        TRIM(OWNER_NAME) as OWNER_NAME,
+        COUNT(*) as RECORD_COUNT
+    FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+    WHERE TRIM(AIRCRAFT_MANUFACTURER) = '{manufacturer}'
+    GROUP BY TAIL_NUMBER, AIRCRAFT_MODEL, AIRCRAFT_YEAR, OWNER_NAME
+    ORDER BY RECORD_COUNT DESC
+    LIMIT 50
+    """
+    return run_query(query)
+
 # =============================================================================
-# Styling
+# Design System
 # =============================================================================
+# Color palette
+COLORS = {
+    'background': '#0A0A0B',
+    'surface': '#141416',
+    'border': '#27272A',
+    'muted': '#71717A',
+    'foreground': '#FAFAFA',
+    'accent': '#F59E0B',
+    'accent_muted': '#D97706',
+    'success': '#22C55E',
+    'info': '#3B82F6',
+}
+
+# Chart color scales
+CHART_COLORS = ['#F59E0B', '#D97706', '#B45309', '#92400E', '#78350F']
+CHART_COLORSCALE = [[0, '#3B82F6'], [0.5, '#F59E0B'], [1, '#DC2626']]
+
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #1e3a5f;
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
+    /* Import Plus Jakarta Sans */
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+    
+    /* Global Typography */
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
-    .stMetric {
-        background-color: #0e1117;
-        border-radius: 10px;
-        padding: 15px;
-        border: 1px solid #262730;
+    
+    /* Page Background */
+    .stApp {
+        background-color: #0A0A0B;
     }
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #ffffff;
-        margin-bottom: 0.5rem;
+    
+    /* Main content area */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1200px;
     }
-    .sub-header {
-        font-size: 1.1rem;
-        color: #a3a8b4;
+    
+    /* Page Header Styling */
+    .page-header {
         margin-bottom: 2rem;
+    }
+    .page-title {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #FAFAFA;
+        margin: 0 0 0.5rem 0;
+        letter-spacing: -0.02em;
+    }
+    .page-subtitle {
+        font-size: 1rem;
+        color: #71717A;
+        margin: 0;
+        font-weight: 400;
+    }
+    
+    /* Section Headers */
+    .section-header {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #FAFAFA;
+        margin: 1.5rem 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #27272A;
+    }
+    
+    /* Metric Cards */
+    [data-testid="stMetric"] {
+        background-color: #141416;
+        border: 1px solid #27272A;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        border-left: 3px solid #F59E0B;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: #71717A;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 1.75rem;
+        font-weight: 600;
+        color: #FAFAFA;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.8rem;
+        color: #71717A;
+    }
+    [data-testid="stMetricDelta"] svg {
+        display: none;
+    }
+    
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #0A0A0B;
+        border-right: 1px solid #27272A;
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 2rem;
+    }
+    
+    /* Sidebar Brand */
+    .sidebar-brand {
+        padding: 0 1rem 1.5rem 1rem;
+        border-bottom: 1px solid #27272A;
+        margin-bottom: 1.5rem;
+    }
+    .sidebar-brand-name {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #FAFAFA;
+        letter-spacing: 0.1em;
+        margin: 0;
+    }
+    .sidebar-brand-tagline {
+        font-size: 0.8rem;
+        color: #71717A;
+        margin: 0.25rem 0 0 0;
+        font-weight: 400;
+    }
+    
+    /* Environment Badge */
+    .env-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 1rem 0;
+    }
+    .env-badge.local {
+        background-color: rgba(34, 197, 94, 0.1);
+        color: #22C55E;
+        border: 1px solid rgba(34, 197, 94, 0.2);
+    }
+    .env-badge.sis {
+        background-color: rgba(59, 130, 246, 0.1);
+        color: #3B82F6;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    
+    /* Navigation Radio Buttons */
+    [data-testid="stSidebar"] [data-testid="stRadio"] > label {
+        display: none;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] > div {
+        gap: 0.25rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] {
+        background-color: transparent;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        margin: 0;
+        transition: all 0.15s ease;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"]:hover {
+        background-color: #141416;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"][aria-checked="true"] {
+        background-color: #141416;
+        border-left: 2px solid #F59E0B;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] p {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #FAFAFA;
+    }
+    [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] {
+        margin-left: 0;
+    }
+    /* Hide radio circle */
+    [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label > div:first-child {
+        display: none;
+    }
+    
+    /* Sidebar Footer */
+    .sidebar-footer {
+        padding: 1rem;
+        border-top: 1px solid #27272A;
+        margin-top: 2rem;
+    }
+    .sidebar-footer-text {
+        font-size: 0.7rem;
+        color: #52525B;
+        margin: 0;
+    }
+    
+    /* Data Tables */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #27272A;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    [data-testid="stDataFrame"] table {
+        border: none;
+    }
+    
+    /* Input Fields */
+    [data-testid="stTextInput"] input {
+        background-color: #141416;
+        border: 1px solid #27272A;
+        border-radius: 6px;
+        color: #FAFAFA;
+        font-size: 0.9rem;
+    }
+    [data-testid="stTextInput"] input:focus {
+        border-color: #F59E0B;
+        box-shadow: 0 0 0 1px #F59E0B;
+    }
+    [data-testid="stTextInput"] label {
+        color: #71717A;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    /* Select Box */
+    [data-testid="stSelectbox"] label {
+        color: #71717A;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    /* Slider */
+    [data-testid="stSlider"] label {
+        color: #71717A;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    /* Alerts/Info boxes */
+    [data-testid="stAlert"] {
+        background-color: #141416;
+        border: 1px solid #27272A;
+        border-radius: 6px;
+    }
+    
+    /* Caption text */
+    .stCaption {
+        color: #52525B;
+        font-size: 0.8rem;
+    }
+    
+    /* Insight box */
+    .insight-box {
+        background-color: #141416;
+        border: 1px solid #27272A;
+        border-left: 3px solid #F59E0B;
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    .insight-box p {
+        margin: 0;
+        color: #FAFAFA;
+        font-size: 0.9rem;
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Divider styling */
+    hr {
+        border-color: #27272A;
+        margin: 1.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -315,37 +618,60 @@ st.markdown("""
 # =============================================================================
 # Navigation
 # =============================================================================
-st.sidebar.title("✈️ DK Aviation")
-st.sidebar.markdown("**Flight Insights Platform**")
+# Sidebar brand
+st.sidebar.markdown("""
+<div class="sidebar-brand">
+    <p class="sidebar-brand-name">DK AVIATION</p>
+    <p class="sidebar-brand-tagline">Flight Insights</p>
+</div>
+""", unsafe_allow_html=True)
 
-# Show environment indicator
+# Environment indicator
 if env_type == "local":
-    st.sidebar.success("🖥️ Running Locally")
+    st.sidebar.markdown('<span class="env-badge local">Local Environment</span>', unsafe_allow_html=True)
 else:
-    st.sidebar.info("❄️ Streamlit in Snowflake")
+    st.sidebar.markdown('<span class="env-badge sis">Snowflake Cloud</span>', unsafe_allow_html=True)
 
-st.sidebar.divider()
-
+# Navigation
 page = st.sidebar.radio(
     "Navigate",
-    ["🏠 Fleet Overview", "🔍 Aircraft Lookup", "📊 Traffic Analysis", "🗺️ Flight Map"],
+    ["Fleet Overview", "Aircraft Lookup", "Traffic Analysis", "Flight Map"],
     label_visibility="collapsed"
 )
 
-st.sidebar.divider()
-st.sidebar.markdown("---")
-st.sidebar.caption("**Data Sources:**")
-st.sidebar.caption("• ADS-B (KBFI & KAPA)")
-st.sidebar.caption("• FAA Aircraft Registry")
-st.sidebar.caption("---")
-st.sidebar.caption("Built with Snowflake + Streamlit")
+# Sidebar footer
+st.sidebar.markdown("""
+<div class="sidebar-footer">
+    <p class="sidebar-footer-text">ADS-B (KBFI & KAPA) + FAA Registry</p>
+    <p class="sidebar-footer-text" style="margin-top: 0.25rem;">© 2024 DK Aviation</p>
+</div>
+""", unsafe_allow_html=True)
+
+# =============================================================================
+# Helper: Page Header
+# =============================================================================
+def render_page_header(title: str, subtitle: str):
+    """Render a consistent page header."""
+    st.markdown(f"""
+    <div class="page-header">
+        <h1 class="page-title">{title}</h1>
+        <p class="page-subtitle">{subtitle}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_section_header(title: str):
+    """Render a consistent section header."""
+    st.markdown(f'<h2 class="section-header">{title}</h2>', unsafe_allow_html=True)
+
+def render_insight(text: str):
+    """Render an insight box."""
+    st.markdown(f'<div class="insight-box"><p>{text}</p></div>', unsafe_allow_html=True)
 
 # =============================================================================
 # Page: Fleet Overview
 # =============================================================================
-if page == "🏠 Fleet Overview":
-    st.markdown('<p class="main-header">Fleet Overview Dashboard</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Consolidated ADS-B + FAA flight data insights for DK Aviation</p>', unsafe_allow_html=True)
+if page == "Fleet Overview":
+    render_page_header("Fleet Overview", "Consolidated ADS-B and FAA flight data insights")
     
     # Key Metrics
     with st.spinner("Loading metrics..."):
@@ -375,15 +701,13 @@ if page == "🏠 Fleet Overview":
                 value=f"{metrics['UNIQUE_OWNERS'].iloc[0]:,.0f}"
             )
         
-        st.caption(f"📅 Data range: {metrics['EARLIEST_RECORD'].iloc[0]} to {metrics['LATEST_RECORD'].iloc[0]}")
-    
-    st.divider()
+        st.caption(f"Data range: {metrics['EARLIEST_RECORD'].iloc[0]} to {metrics['LATEST_RECORD'].iloc[0]}")
     
     # Two column layout for charts
     col_left, col_right = st.columns([2, 1])
     
     with col_left:
-        st.subheader("Top Aircraft Manufacturers")
+        render_section_header("Top Aircraft Manufacturers")
         with st.spinner("Loading manufacturer data..."):
             mfr_data = get_top_manufacturers(15)
         
@@ -394,7 +718,7 @@ if page == "🏠 Fleet Overview":
                 y='MANUFACTURER',
                 orientation='h',
                 color='UNIQUE_AIRCRAFT',
-                color_continuous_scale='Blues',
+                color_continuous_scale=[[0, '#27272A'], [0.5, '#F59E0B'], [1, '#DC2626']],
                 labels={
                     'FLIGHT_RECORDS': 'Flight Records',
                     'MANUFACTURER': 'Manufacturer',
@@ -403,16 +727,22 @@ if page == "🏠 Fleet Overview":
             )
             fig.update_layout(
                 height=500,
-                yaxis={'categoryorder': 'total ascending'},
                 showlegend=False,
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                font_color='#ffffff'
+                font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+                xaxis=dict(gridcolor='#27272A', zerolinecolor='#27272A'),
+                yaxis=dict(categoryorder='total ascending', gridcolor='#27272A'),
+                coloraxis_colorbar=dict(
+                    title=dict(text="Aircraft", font=dict(color='#71717A')),
+                    tickfont=dict(color='#71717A')
+                ),
+                margin=dict(l=0, r=0, t=20, b=0)
             )
             st.plotly_chart(fig, use_container_width=True)
     
     with col_right:
-        st.subheader("Data Sources")
+        render_section_header("Data Sources")
         with st.spinner("Loading source breakdown..."):
             source_data = get_source_breakdown()
         
@@ -421,13 +751,24 @@ if page == "🏠 Fleet Overview":
                 source_data,
                 values='RECORD_COUNT',
                 names='SOURCE_TYPE',
-                color_discrete_sequence=['#1f77b4', '#ff7f0e'],
+                color_discrete_sequence=['#F59E0B', '#3B82F6'],
                 hole=0.4
             )
             fig.update_layout(
-                height=300,
+                height=280,
                 paper_bgcolor='rgba(0,0,0,0)',
-                font_color='#ffffff'
+                font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+                legend=dict(
+                    font=dict(color='#71717A'),
+                    orientation='h',
+                    yanchor='bottom',
+                    y=-0.2
+                ),
+                margin=dict(l=0, r=0, t=20, b=40)
+            )
+            fig.update_traces(
+                textfont=dict(color='#FAFAFA'),
+                marker=dict(line=dict(color='#0A0A0B', width=2))
             )
             st.plotly_chart(fig, use_container_width=True)
             
@@ -442,89 +783,199 @@ if page == "🏠 Fleet Overview":
 # =============================================================================
 # Page: Aircraft Lookup
 # =============================================================================
-elif page == "🔍 Aircraft Lookup":
-    st.markdown('<p class="main-header">Aircraft Lookup</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Search for aircraft by tail number or callsign</p>', unsafe_allow_html=True)
+elif page == "Aircraft Lookup":
+    render_page_header("Aircraft Lookup", "Find and explore aircraft in the fleet")
     
-    # Search input
-    search_term = st.text_input(
-        "🔍 Enter tail number or callsign",
-        placeholder="e.g., N12345 or UAL123",
-        help="Search is case-insensitive and supports partial matches"
-    )
+    # Initialize session state for selected aircraft
+    if 'selected_tail' not in st.session_state:
+        st.session_state.selected_tail = None
     
-    if search_term and len(search_term) >= 2:
-        with st.spinner("Searching..."):
-            results = search_aircraft(search_term)
+    # Two columns: Discovery (left) and Search (right)
+    col_browse, col_search = st.columns([1, 1])
+    
+    with col_browse:
+        render_section_header("Browse by Manufacturer")
         
-        if not results.empty:
-            st.success(f"Found {len(results)} aircraft matching '{search_term}'")
+        # Load manufacturers
+        with st.spinner("Loading manufacturers..."):
+            manufacturers = get_manufacturer_list()
+        
+        if not manufacturers.empty:
+            # Create dropdown options with aircraft counts
+            mfr_options = ["Select a manufacturer..."] + [
+                f"{row['MANUFACTURER']} ({row['AIRCRAFT_COUNT']:,.0f})" 
+                for _, row in manufacturers.iterrows()
+            ]
             
-            # Aircraft selection
-            aircraft_options = results['TAIL_NUMBER'].unique().tolist()
-            selected_aircraft = st.selectbox(
-                "Select an aircraft to view details",
-                options=aircraft_options
+            selected_mfr_display = st.selectbox(
+                "Manufacturer",
+                options=mfr_options,
+                label_visibility="collapsed"
             )
             
-            if selected_aircraft:
-                st.divider()
+            if selected_mfr_display != "Select a manufacturer...":
+                # Extract manufacturer name (remove count)
+                selected_mfr = selected_mfr_display.rsplit(' (', 1)[0]
                 
-                # Aircraft details
-                aircraft_info = results[results['TAIL_NUMBER'] == selected_aircraft].iloc[0]
+                with st.spinner("Loading aircraft..."):
+                    mfr_aircraft = get_aircraft_by_manufacturer(selected_mfr)
                 
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader(f"✈️ {selected_aircraft}")
-                    st.markdown(f"""
-                    | Attribute | Value |
-                    |-----------|-------|
-                    | **Manufacturer** | {aircraft_info['AIRCRAFT_MANUFACTURER']} |
-                    | **Model** | {aircraft_info['AIRCRAFT_MODEL']} |
-                    | **Year** | {aircraft_info['AIRCRAFT_YEAR'] or 'N/A'} |
-                    | **Engine** | {aircraft_info['ENGINE_MANUFACTURER'] or 'N/A'} {aircraft_info['ENGINE_MODEL'] or ''} |
-                    | **Owner** | {aircraft_info['OWNER_NAME'] or 'N/A'} |
-                    | **Data Source** | {aircraft_info['SOURCE_TYPE']} |
-                    """)
-                
-                with col2:
-                    st.subheader("Recent Activity")
-                    with st.spinner("Loading flight history..."):
-                        activity = get_aircraft_activity(selected_aircraft, 50)
+                if not mfr_aircraft.empty:
+                    st.caption(f"{len(mfr_aircraft)} aircraft from {selected_mfr}")
                     
-                    if not activity.empty:
-                        # Show activity metrics
-                        air_count = len(activity[activity['AIR_GROUND_STATUS'] == 'AIR'])
-                        ground_count = len(activity[activity['AIR_GROUND_STATUS'] == 'GROUND'])
-                        
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("Records", len(activity))
-                        m2.metric("In Air", air_count)
-                        m3.metric("On Ground", ground_count)
-                        
-                        # Show recent positions
-                        st.dataframe(
-                            activity[['RECORD_TS', 'FLIGHT_CALLSIGN', 'ALTITUDE_BARO', 'GROUND_SPEED', 'AIR_GROUND_STATUS']].head(10),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                    else:
-                        st.info("No recent activity found for this aircraft.")
-        else:
-            st.warning(f"No aircraft found matching '{search_term}'")
-    elif search_term:
-        st.info("Please enter at least 2 characters to search")
+                    # Show aircraft list as clickable dataframe
+                    st.dataframe(
+                        mfr_aircraft[['TAIL_NUMBER', 'AIRCRAFT_MODEL', 'OWNER_NAME', 'RECORD_COUNT']],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "TAIL_NUMBER": "Tail Number",
+                            "AIRCRAFT_MODEL": "Model",
+                            "OWNER_NAME": "Owner",
+                            "RECORD_COUNT": st.column_config.NumberColumn("Records", format="%d")
+                        },
+                        height=200
+                    )
+                    
+                    # Quick select from this manufacturer
+                    aircraft_from_mfr = mfr_aircraft['TAIL_NUMBER'].tolist()
+                    quick_select = st.selectbox(
+                        "Quick select",
+                        options=["Choose aircraft..."] + aircraft_from_mfr,
+                        label_visibility="collapsed",
+                        key="mfr_select"
+                    )
+                    if quick_select != "Choose aircraft...":
+                        st.session_state.selected_tail = quick_select
+    
+    with col_search:
+        render_section_header("Search")
+        
+        search_term = st.text_input(
+            "Search",
+            placeholder="Tail number or callsign (e.g., N12345)",
+            help="Search is case-insensitive and supports partial matches",
+            label_visibility="collapsed"
+        )
+        
+        if search_term and len(search_term) >= 2:
+            with st.spinner("Searching..."):
+                results = search_aircraft(search_term)
+            
+            if not results.empty:
+                st.caption(f"Found {len(results)} matches")
+                
+                aircraft_options = results['TAIL_NUMBER'].unique().tolist()
+                selected_from_search = st.selectbox(
+                    "Select aircraft",
+                    options=["Choose aircraft..."] + aircraft_options,
+                    label_visibility="collapsed",
+                    key="search_select"
+                )
+                if selected_from_search != "Choose aircraft...":
+                    st.session_state.selected_tail = selected_from_search
+            else:
+                st.caption(f"No matches for '{search_term}'")
+        
+        # Most Active Aircraft section
+        render_section_header("Most Active Aircraft")
+        
+        with st.spinner("Loading top aircraft..."):
+            top_aircraft = get_top_aircraft(8)
+        
+        if not top_aircraft.empty:
+            st.dataframe(
+                top_aircraft[['TAIL_NUMBER', 'AIRCRAFT_MANUFACTURER', 'RECORD_COUNT']],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "TAIL_NUMBER": "Tail",
+                    "AIRCRAFT_MANUFACTURER": "Manufacturer",
+                    "RECORD_COUNT": st.column_config.NumberColumn("Records", format="%d")
+                },
+                height=200
+            )
+            
+            # Quick select from top aircraft
+            top_options = top_aircraft['TAIL_NUMBER'].tolist()
+            top_select = st.selectbox(
+                "Quick select",
+                options=["Choose aircraft..."] + top_options,
+                label_visibility="collapsed",
+                key="top_select"
+            )
+            if top_select != "Choose aircraft...":
+                st.session_state.selected_tail = top_select
+    
+    # Aircraft Details Section (shown when aircraft is selected)
+    if st.session_state.selected_tail:
+        selected_aircraft = st.session_state.selected_tail
+        
+        render_section_header(f"Aircraft Details: {selected_aircraft}")
+        
+        # Fetch full aircraft info
+        with st.spinner("Loading aircraft details..."):
+            aircraft_results = search_aircraft(selected_aircraft)
+        
+        if not aircraft_results.empty:
+            aircraft_info = aircraft_results[aircraft_results['TAIL_NUMBER'] == selected_aircraft].iloc[0]
+            
+            detail_col1, detail_col2 = st.columns(2)
+            
+            with detail_col1:
+                st.markdown(f"""
+| Attribute | Value |
+|-----------|-------|
+| **Tail Number** | {selected_aircraft} |
+| **Manufacturer** | {aircraft_info['AIRCRAFT_MANUFACTURER']} |
+| **Model** | {aircraft_info['AIRCRAFT_MODEL']} |
+| **Year** | {aircraft_info['AIRCRAFT_YEAR'] or 'N/A'} |
+| **Engine** | {aircraft_info['ENGINE_MANUFACTURER'] or 'N/A'} {aircraft_info['ENGINE_MODEL'] or ''} |
+| **Owner** | {aircraft_info['OWNER_NAME'] or 'N/A'} |
+| **Data Source** | {aircraft_info['SOURCE_TYPE']} |
+""")
+            
+            with detail_col2:
+                with st.spinner("Loading flight history..."):
+                    activity = get_aircraft_activity(selected_aircraft, 50)
+                
+                if not activity.empty:
+                    air_count = len(activity[activity['AIR_GROUND_STATUS'] == 'AIR'])
+                    ground_count = len(activity[activity['AIR_GROUND_STATUS'] == 'GROUND'])
+                    
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Records", len(activity))
+                    m2.metric("In Air", air_count)
+                    m3.metric("On Ground", ground_count)
+                    
+                    st.dataframe(
+                        activity[['RECORD_TS', 'FLIGHT_CALLSIGN', 'ALTITUDE_BARO', 'GROUND_SPEED', 'AIR_GROUND_STATUS']].head(10),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "RECORD_TS": st.column_config.DatetimeColumn("Timestamp", format="MMM D, HH:mm"),
+                            "FLIGHT_CALLSIGN": "Callsign",
+                            "ALTITUDE_BARO": st.column_config.NumberColumn("Altitude", format="%d ft"),
+                            "GROUND_SPEED": st.column_config.NumberColumn("Speed", format="%d kts"),
+                            "AIR_GROUND_STATUS": "Status"
+                        }
+                    )
+                else:
+                    st.caption("No recent activity found.")
+            
+            # Clear selection button
+            if st.button("Clear Selection", type="secondary"):
+                st.session_state.selected_tail = None
+                st.rerun()
 
 # =============================================================================
 # Page: Traffic Analysis
 # =============================================================================
-elif page == "📊 Traffic Analysis":
-    st.markdown('<p class="main-header">Traffic Analysis</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Analyze flight patterns to optimize trip planning and mitigate delays</p>', unsafe_allow_html=True)
+elif page == "Traffic Analysis":
+    render_page_header("Traffic Analysis", "Analyze flight patterns to optimize operations and mitigate delays")
     
     # Air/Ground Distribution
-    st.subheader("Air vs Ground Status Distribution")
+    render_section_header("Air vs Ground Status")
     
     with st.spinner("Loading status distribution..."):
         status_data = get_air_ground_distribution()
@@ -533,17 +984,29 @@ elif page == "📊 Traffic Analysis":
         col1, col2 = st.columns([1, 2])
         
         with col1:
+            # Map status to colors
+            color_map = {'AIR': '#22C55E', 'GROUND': '#F59E0B', 'UNKNOWN': '#71717A'}
+            colors = [color_map.get(status, '#71717A') for status in status_data['AIR_GROUND_STATUS']]
+            
             fig = px.pie(
                 status_data,
                 values='RECORD_COUNT',
                 names='AIR_GROUND_STATUS',
-                color_discrete_sequence=['#2ecc71', '#e74c3c', '#95a5a6'],
-                hole=0.4
+                color='AIR_GROUND_STATUS',
+                color_discrete_map=color_map,
+                hole=0.5
             )
             fig.update_layout(
-                height=300,
+                height=280,
                 paper_bgcolor='rgba(0,0,0,0)',
-                font_color='#ffffff'
+                font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+                legend=dict(font=dict(color='#71717A')),
+                margin=dict(l=0, r=0, t=20, b=20),
+                showlegend=False
+            )
+            fig.update_traces(
+                textfont=dict(color='#FAFAFA'),
+                marker=dict(line=dict(color='#0A0A0B', width=2))
             )
             st.plotly_chart(fig, use_container_width=True)
         
@@ -556,11 +1019,9 @@ elif page == "📊 Traffic Analysis":
                     delta=f"{pct:.1f}%"
                 )
     
-    st.divider()
-    
     # Hourly traffic pattern
-    st.subheader("Hourly Traffic Pattern")
-    st.caption("Flight activity by hour of day (all data)")
+    render_section_header("Hourly Traffic Pattern")
+    st.caption("Flight activity by hour of day (UTC)")
     
     with st.spinner("Loading hourly traffic..."):
         hourly_data = get_hourly_traffic()
@@ -571,9 +1032,9 @@ elif page == "📊 Traffic Analysis":
             x='HOUR_OF_DAY',
             y='FLIGHT_COUNT',
             color='UNIQUE_AIRCRAFT',
-            color_continuous_scale='Viridis',
+            color_continuous_scale=[[0, '#27272A'], [0.5, '#F59E0B'], [1, '#DC2626']],
             labels={
-                'HOUR_OF_DAY': 'Hour of Day (UTC)',
+                'HOUR_OF_DAY': 'Hour (UTC)',
                 'FLIGHT_COUNT': 'Flight Records',
                 'UNIQUE_AIRCRAFT': 'Unique Aircraft'
             }
@@ -582,34 +1043,51 @@ elif page == "📊 Traffic Analysis":
             height=400,
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font_color='#ffffff',
-            xaxis=dict(tickmode='linear', tick0=0, dtick=1)
+            font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+            xaxis=dict(
+                tickmode='linear', 
+                tick0=0, 
+                dtick=2,
+                gridcolor='#27272A',
+                zerolinecolor='#27272A'
+            ),
+            yaxis=dict(gridcolor='#27272A'),
+            coloraxis_colorbar=dict(
+                title=dict(text="Aircraft", font=dict(color='#71717A')),
+                tickfont=dict(color='#71717A')
+            ),
+            margin=dict(l=0, r=0, t=20, b=0),
+            bargap=0.15
         )
         st.plotly_chart(fig, use_container_width=True)
         
         # Peak hours insight
         peak_hour = hourly_data.loc[hourly_data['FLIGHT_COUNT'].idxmax()]
-        st.info(f"📈 **Peak Traffic Hour:** {int(peak_hour['HOUR_OF_DAY']):02d}:00 UTC with {peak_hour['FLIGHT_COUNT']:,.0f} records")
+        render_insight(f"Peak Traffic: {int(peak_hour['HOUR_OF_DAY']):02d}:00 UTC with {peak_hour['FLIGHT_COUNT']:,.0f} records")
 
 # =============================================================================
 # Page: Flight Map
 # =============================================================================
-elif page == "🗺️ Flight Map":
-    st.markdown('<p class="main-header">Flight Map</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Visualize recent aircraft positions</p>', unsafe_allow_html=True)
+elif page == "Flight Map":
+    render_page_header("Flight Map", "Visualize recent aircraft positions across monitored airspace")
     
     # Controls
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        num_flights = st.slider("Number of flights to display", 100, 2000, 500, 100)
+    num_flights = st.slider(
+        "Aircraft positions to display", 
+        100, 2000, 500, 100,
+        help="Adjust to load more or fewer flight positions"
+    )
     
     with st.spinner(f"Loading {num_flights} recent flight positions..."):
         flight_data = get_recent_flights(num_flights)
     
     if not flight_data.empty:
+        # Filter out rows with invalid size values (NaN ground speed)
+        flight_data = flight_data.dropna(subset=['GROUND_SPEED', 'ALTITUDE_BARO'])
+        flight_data = flight_data[flight_data['GROUND_SPEED'] > 0]
         # Summary metrics
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Flights Displayed", len(flight_data))
+        m1.metric("Positions", len(flight_data))
         m2.metric("Avg Altitude", f"{flight_data['ALTITUDE_BARO'].mean():,.0f} ft")
         m3.metric("Avg Speed", f"{flight_data['GROUND_SPEED'].mean():,.0f} kts")
         m4.metric("Unique Aircraft", flight_data['TAIL_NUMBER'].nunique())
@@ -631,28 +1109,28 @@ elif page == "🗺️ Flight Map":
                 'LATITUDE': False,
                 'LONGITUDE': False
             },
-            color_continuous_scale='Plasma',
-            size_max=15,
+            color_continuous_scale=[[0, '#3B82F6'], [0.5, '#F59E0B'], [1, '#DC2626']],
+            size_max=12,
             zoom=3,
-            center={'lat': 39.8283, 'lon': -98.5795}  # Center of US
+            center={'lat': 39.8283, 'lon': -98.5795}
         )
         fig.update_layout(
             mapbox_style='carto-darkmatter',
-            height=600,
+            height=550,
             margin={'r': 0, 't': 0, 'l': 0, 'b': 0},
             paper_bgcolor='rgba(0,0,0,0)',
-            font_color='#ffffff'
+            font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+            coloraxis_colorbar=dict(
+                title=dict(text="Altitude (ft)", font=dict(color='#71717A', size=11)),
+                tickfont=dict(color='#71717A', size=10),
+                thickness=12,
+                len=0.6
+            )
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        st.caption("💡 Tip: Color represents altitude (darker = higher). Size represents ground speed.")
+        st.caption("Color indicates altitude. Size indicates ground speed.")
     else:
-        st.warning("No flight position data available.")
+        st.caption("No flight position data available.")
 
-# =============================================================================
-# Footer
-# =============================================================================
-st.sidebar.markdown("---")
-st.sidebar.caption("© 2024 DK Aviation POC")
-st.sidebar.caption("Powered by Snowflake")
 
