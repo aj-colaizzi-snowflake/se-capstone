@@ -534,25 +534,25 @@ st.markdown("""
     
     /* Main content area */
     .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
         max-width: 1200px;
     }
     
     /* Page Header Styling */
     .page-header {
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
     }
     .page-title {
         font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 2rem;
+        font-size: 1.75rem;
         font-weight: 600;
         color: #FAFAFA;
-        margin: 0 0 0.5rem 0;
+        margin: 0 0 0.25rem 0;
         letter-spacing: -0.02em;
     }
     .page-subtitle {
-        font-size: 1rem;
+        font-size: 0.9rem;
         color: #71717A;
         margin: 0;
         font-weight: 400;
@@ -561,11 +561,11 @@ st.markdown("""
     /* Section Headers */
     .section-header {
         font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 1.125rem;
+        font-size: 1rem;
         font-weight: 600;
         color: #FAFAFA;
-        margin: 1.5rem 0 1rem 0;
-        padding-bottom: 0.5rem;
+        margin: 1rem 0 0.75rem 0;
+        padding-bottom: 0.35rem;
         border-bottom: 1px solid #27272A;
     }
     
@@ -573,12 +573,12 @@ st.markdown("""
     [data-testid="stMetric"] {
         background-color: #141416;
         border: 1px solid #27272A;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
         border-left: 3px solid #F59E0B;
     }
     [data-testid="stMetricLabel"] {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: 500;
         color: #71717A;
         text-transform: uppercase;
@@ -586,12 +586,12 @@ st.markdown("""
     }
     [data-testid="stMetricValue"] {
         font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 1.75rem;
+        font-size: 1.5rem;
         font-weight: 600;
         color: #FAFAFA;
     }
     [data-testid="stMetricDelta"] {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         color: #71717A;
     }
     [data-testid="stMetricDelta"] svg {
@@ -603,15 +603,29 @@ st.markdown("""
         background-color: #0A0A0B;
         border-right: 1px solid #27272A;
     }
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 0.5rem;
+    }
     [data-testid="stSidebar"] .block-container {
-        padding-top: 2rem;
+        padding-top: 0.5rem;
     }
     
-    /* Sidebar Brand */
+    /* Sidebar Logo */
+    [data-testid="stSidebar"] [data-testid="stImage"] {
+        margin-bottom: 0.5rem;
+        padding: 0 0.5rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stImage"] img {
+        background-color: #FAFAFA;
+        border-radius: 6px;
+        padding: 0.5rem;
+    }
+    
+    /* Sidebar Brand - keep for fallback */
     .sidebar-brand {
-        padding: 0 1rem 1.5rem 1rem;
+        padding: 0 0.75rem 1rem 0.75rem;
         border-bottom: 1px solid #27272A;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
     }
     .sidebar-brand-name {
         font-family: 'Plus Jakarta Sans', sans-serif;
@@ -632,13 +646,13 @@ st.markdown("""
     .env-badge {
         display: inline-flex;
         align-items: center;
-        padding: 0.25rem 0.75rem;
+        padding: 0.2rem 0.5rem;
         border-radius: 9999px;
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin: 1rem 0;
+        margin: 0.25rem 0 0.5rem 0;
     }
     .env-badge.local {
         background-color: rgba(34, 197, 94, 0.1);
@@ -656,12 +670,12 @@ st.markdown("""
         display: none;
     }
     [data-testid="stSidebar"] [data-testid="stRadio"] > div {
-        gap: 0.25rem;
+        gap: 0.125rem;
     }
     [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] {
         background-color: transparent;
-        padding: 0.75rem 1rem;
-        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
         margin: 0;
         transition: all 0.15s ease;
     }
@@ -673,7 +687,7 @@ st.markdown("""
         border-left: 2px solid #F59E0B;
     }
     [data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] p {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 500;
         color: #FAFAFA;
     }
@@ -687,12 +701,12 @@ st.markdown("""
     
     /* Sidebar Footer */
     .sidebar-footer {
-        padding: 1rem;
+        padding: 0.5rem 0.75rem;
         border-top: 1px solid #27272A;
-        margin-top: 2rem;
+        margin-top: 1rem;
     }
     .sidebar-footer-text {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         color: #52525B;
         margin: 0;
     }
@@ -749,7 +763,7 @@ st.markdown("""
     /* Caption text */
     .stCaption {
         color: #52525B;
-        font-size: 0.8rem;
+        font-size: 0.75rem;
     }
     
     /* Insight box */
@@ -758,13 +772,13 @@ st.markdown("""
         border: 1px solid #27272A;
         border-left: 3px solid #F59E0B;
         border-radius: 6px;
-        padding: 1rem;
-        margin: 1rem 0;
+        padding: 0.75rem;
+        margin: 0.75rem 0;
     }
     .insight-box p {
         margin: 0;
         color: #FAFAFA;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
     
     /* Hide Streamlit branding */
@@ -774,7 +788,7 @@ st.markdown("""
     /* Divider styling */
     hr {
         border-color: #27272A;
-        margin: 1.5rem 0;
+        margin: 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -782,19 +796,14 @@ st.markdown("""
 # =============================================================================
 # Navigation
 # =============================================================================
-# Sidebar brand
-st.sidebar.markdown("""
-<div class="sidebar-brand">
-    <p class="sidebar-brand-name">DK AVIATION</p>
-    <p class="sidebar-brand-tagline">Flight Insights</p>
-</div>
-""", unsafe_allow_html=True)
+# Sidebar logo
+st.sidebar.image("dk_aviation_company_logo.png", use_container_width=True)
 
 # Environment indicator
 if env_type == "local":
-    st.sidebar.markdown('<span class="env-badge local">Local Environment</span>', unsafe_allow_html=True)
+    st.sidebar.markdown('<span class="env-badge local">Local</span>', unsafe_allow_html=True)
 else:
-    st.sidebar.markdown('<span class="env-badge sis">Snowflake Cloud</span>', unsafe_allow_html=True)
+    st.sidebar.markdown('<span class="env-badge sis">Cloud</span>', unsafe_allow_html=True)
 
 # Navigation
 page = st.sidebar.radio(
@@ -806,8 +815,7 @@ page = st.sidebar.radio(
 # Sidebar footer
 st.sidebar.markdown("""
 <div class="sidebar-footer">
-    <p class="sidebar-footer-text">ADS-B (KBFI & KAPA) + FAA Registry</p>
-    <p class="sidebar-footer-text" style="margin-top: 0.25rem;">© 2024 DK Aviation</p>
+    <p class="sidebar-footer-text">ADS-B + FAA Registry Data</p>
 </div>
 """, unsafe_allow_html=True)
 
