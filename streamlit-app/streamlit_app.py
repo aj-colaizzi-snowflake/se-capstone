@@ -498,6 +498,195 @@ def get_pipeline_health():
     return run_query(query)
 
 # =============================================================================
+# Trip Planner Functions
+# =============================================================================
+@st.cache_data(ttl=600)
+def get_departure_risk_analysis(day_of_week: int, hour: int):
+    """
+    Analyze delay risk for a specific day/hour combination.
+    
+    Args:
+        day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
+        hour: 0-23 (UTC)
+    
+    Returns:
+        DataFrame with risk score, traffic metrics, and percentile ranking
+    """
+    query = f"""
+    WITH all_slots AS (
+        -- Get traffic for every day/hour combination
+        SELECT 
+            DAYOFWEEK(RECORD_TS) as day_num,
+            HOUR(RECORD_TS) as hour_of_day,
+            DATE(RECORD_TS) as record_date,
+            COUNT(*) as slot_traffic,
+            COUNT(DISTINCT TAIL_NUMBER) as slot_aircraft
+        FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+        GROUP BY DAYOFWEEK(RECORD_TS), HOUR(RECORD_TS), DATE(RECORD_TS)
+    ),
+    slot_averages AS (
+        -- Calculate average traffic per day/hour slot
+        SELECT 
+            day_num,
+            hour_of_day,
+            AVG(slot_traffic) as avg_traffic,
+            AVG(slot_aircraft) as avg_aircraft,
+            COUNT(*) as sample_days
+        FROM all_slots
+        GROUP BY day_num, hour_of_day
+    ),
+    global_stats AS (
+        -- Overall averages for comparison
+        SELECT 
+            AVG(avg_traffic) as global_avg_traffic,
+            STDDEV(avg_traffic) as global_stddev
+        FROM slot_averages
+    ),
+    ranked_slots AS (
+        -- Rank all slots by traffic
+        SELECT 
+            s.*,
+            g.global_avg_traffic,
+            g.global_stddev,
+            PERCENT_RANK() OVER (ORDER BY s.avg_traffic) as traffic_percentile,
+            ROUND((s.avg_traffic - g.global_avg_traffic) / NULLIF(g.global_avg_traffic, 0) * 100, 1) as pct_vs_average
+        FROM slot_averages s
+        CROSS JOIN global_stats g
+    )
+    SELECT 
+        day_num,
+        hour_of_day,
+        avg_traffic,
+        avg_aircraft,
+        sample_days,
+        global_avg_traffic,
+        traffic_percentile,
+        pct_vs_average,
+        ROUND(traffic_percentile * 100, 0) as risk_score,
+        CASE 
+            WHEN traffic_percentile <= 0.25 THEN 'LOW'
+            WHEN traffic_percentile <= 0.75 THEN 'MODERATE'
+            ELSE 'HIGH'
+        END as risk_level
+    FROM ranked_slots
+    WHERE day_num = {day_of_week} AND hour_of_day = {hour}
+    """
+    return run_query(query)
+
+@st.cache_data(ttl=600)
+def get_day_hourly_pattern(day_of_week: int):
+    """
+    Get hourly traffic pattern for a specific day of week.
+    
+    Args:
+        day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
+    
+    Returns:
+        DataFrame with hourly traffic for the specified day
+    """
+    query = f"""
+    WITH hourly_data AS (
+        SELECT 
+            HOUR(RECORD_TS) as hour_of_day,
+            DATE(RECORD_TS) as record_date,
+            COUNT(*) as hourly_traffic,
+            COUNT(DISTINCT TAIL_NUMBER) as hourly_aircraft
+        FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+        WHERE DAYOFWEEK(RECORD_TS) = {day_of_week}
+        GROUP BY HOUR(RECORD_TS), DATE(RECORD_TS)
+    ),
+    hourly_averages AS (
+        SELECT 
+            hour_of_day,
+            AVG(hourly_traffic) as avg_traffic,
+            AVG(hourly_aircraft) as avg_aircraft,
+            COUNT(*) as sample_count
+        FROM hourly_data
+        GROUP BY hour_of_day
+    ),
+    ranked AS (
+        SELECT 
+            h.*,
+            PERCENT_RANK() OVER (ORDER BY avg_traffic) as traffic_percentile
+        FROM hourly_averages h
+    )
+    SELECT 
+        hour_of_day,
+        avg_traffic,
+        avg_aircraft,
+        sample_count,
+        traffic_percentile,
+        ROUND(traffic_percentile * 100, 0) as risk_score,
+        CASE 
+            WHEN traffic_percentile <= 0.25 THEN 'LOW'
+            WHEN traffic_percentile <= 0.75 THEN 'MODERATE'
+            ELSE 'HIGH'
+        END as risk_level
+    FROM ranked
+    ORDER BY hour_of_day
+    """
+    return run_query(query)
+
+@st.cache_data(ttl=600)
+def get_alternative_windows(day_of_week: int, hour: int, num_alternatives: int = 4):
+    """
+    Find low-risk alternative departure windows near the requested time.
+    
+    Args:
+        day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
+        hour: 0-23 (UTC)
+        num_alternatives: Number of alternatives to return
+    
+    Returns:
+        DataFrame with alternative time slots sorted by proximity and risk
+    """
+    query = f"""
+    WITH hourly_data AS (
+        SELECT 
+            DAYOFWEEK(RECORD_TS) as day_num,
+            HOUR(RECORD_TS) as hour_of_day,
+            DATE(RECORD_TS) as record_date,
+            COUNT(*) as hourly_traffic
+        FROM CAPSTONE.GOLD.AIRCRAFT_FLIGHT_VW
+        WHERE DAYOFWEEK(RECORD_TS) = {day_of_week}
+        GROUP BY DAYOFWEEK(RECORD_TS), HOUR(RECORD_TS), DATE(RECORD_TS)
+    ),
+    hourly_averages AS (
+        SELECT 
+            day_num,
+            hour_of_day,
+            AVG(hourly_traffic) as avg_traffic
+        FROM hourly_data
+        GROUP BY day_num, hour_of_day
+    ),
+    ranked AS (
+        SELECT 
+            h.*,
+            PERCENT_RANK() OVER (ORDER BY avg_traffic) as traffic_percentile,
+            ABS(hour_of_day - {hour}) as hour_distance
+        FROM hourly_averages h
+    )
+    SELECT 
+        day_num,
+        hour_of_day,
+        avg_traffic,
+        traffic_percentile,
+        ROUND(traffic_percentile * 100, 0) as risk_score,
+        CASE 
+            WHEN traffic_percentile <= 0.25 THEN 'LOW'
+            WHEN traffic_percentile <= 0.75 THEN 'MODERATE'
+            ELSE 'HIGH'
+        END as risk_level,
+        hour_distance
+    FROM ranked
+    WHERE hour_of_day != {hour}
+      AND traffic_percentile <= 0.25
+    ORDER BY hour_distance, traffic_percentile
+    LIMIT {num_alternatives}
+    """
+    return run_query(query)
+
+# =============================================================================
 # Design System
 # =============================================================================
 # Color palette
@@ -808,7 +997,7 @@ else:
 # Navigation
 page = st.sidebar.radio(
     "Navigate",
-    ["Operations Hub", "Fleet Overview", "Aircraft Lookup", "Traffic Analysis", "Flight Map"],
+    ["Operations Hub", "Trip Planner", "Fleet Overview", "Aircraft Lookup", "Traffic Analysis", "Flight Map"],
     label_visibility="collapsed"
 )
 
@@ -912,6 +1101,14 @@ if page == "Operations Hub":
             )
         else:
             st.metric(label="Data Freshness", value="--", delta="Checking...")
+    
+    # Quick Action - Plan a Trip callout
+    st.markdown("""
+<div style="background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin: 1rem 0; border-left: 3px solid #F59E0B;">
+    <p style="color: #F59E0B; font-weight: 600; margin: 0; font-size: 0.85rem;">PLAN YOUR NEXT DEPARTURE</p>
+    <p style="color: #FAFAFA; margin: 0.25rem 0 0 0; font-size: 0.9rem;">Use the <strong>Trip Planner</strong> in the sidebar to get personalized delay risk analysis for your specific departure time.</p>
+</div>
+""", unsafe_allow_html=True)
     
     # Quick Recommendation
     if not optimal_windows.empty:
@@ -1032,6 +1229,243 @@ if page == "Operations Hub":
             showlegend=False
         )
         st.plotly_chart(fig, use_container_width=True)
+
+# =============================================================================
+# Page: Trip Planner
+# =============================================================================
+elif page == "Trip Planner":
+    render_page_header("Trip Planner", "Plan your departure and get personalized delay risk analysis")
+    
+    # Day and hour mapping
+    DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    HOUR_OPTIONS = [f"{h:02d}:00 UTC" for h in range(24)]
+    
+    # Input Panel
+    render_section_header("Select Departure Time")
+    
+    input_col1, input_col2, input_col3 = st.columns([2, 2, 1])
+    
+    with input_col1:
+        selected_day_name = st.selectbox(
+            "Day of Week",
+            options=DAY_NAMES,
+            index=0,
+            help="Select the day you plan to depart"
+        )
+        selected_day = DAY_NAMES.index(selected_day_name)
+    
+    with input_col2:
+        selected_hour_display = st.selectbox(
+            "Departure Hour (UTC)",
+            options=HOUR_OPTIONS,
+            index=12,
+            help="Select your planned departure hour in UTC"
+        )
+        selected_hour = HOUR_OPTIONS.index(selected_hour_display)
+    
+    with input_col3:
+        st.write("")  # Spacer
+        st.write("")  # Spacer
+        analyze_clicked = st.button("Analyze", type="primary", use_container_width=True)
+    
+    # Store analysis state
+    if 'trip_analyzed' not in st.session_state:
+        st.session_state.trip_analyzed = False
+        st.session_state.trip_day = None
+        st.session_state.trip_hour = None
+    
+    if analyze_clicked:
+        st.session_state.trip_analyzed = True
+        st.session_state.trip_day = selected_day
+        st.session_state.trip_hour = selected_hour
+    
+    # Run analysis if requested
+    if st.session_state.trip_analyzed:
+        analysis_day = st.session_state.trip_day
+        analysis_hour = st.session_state.trip_hour
+        
+        with st.spinner("Analyzing historical traffic patterns..."):
+            risk_data = get_departure_risk_analysis(analysis_day, analysis_hour)
+            day_pattern = get_day_hourly_pattern(analysis_day)
+            alternatives = get_alternative_windows(analysis_day, analysis_hour, 4)
+        
+        st.divider()
+        
+        # Risk Assessment Card
+        render_section_header("Risk Assessment")
+        
+        if not risk_data.empty:
+            risk_level = risk_data['risk_level'].iloc[0]
+            risk_score = risk_data['risk_score'].iloc[0]
+            pct_vs_avg = risk_data['pct_vs_average'].iloc[0]
+            avg_traffic = risk_data['avg_traffic'].iloc[0]
+            sample_days = risk_data['sample_days'].iloc[0]
+            
+            # Risk colors
+            risk_colors = {
+                'LOW': ('#22C55E', 'rgba(34, 197, 94, 0.1)', 'rgba(34, 197, 94, 0.3)'),
+                'MODERATE': ('#F59E0B', 'rgba(245, 158, 11, 0.1)', 'rgba(245, 158, 11, 0.3)'),
+                'HIGH': ('#DC2626', 'rgba(220, 38, 38, 0.1)', 'rgba(220, 38, 38, 0.3)')
+            }
+            color, bg, border = risk_colors.get(risk_level, ('#71717A', 'rgba(113, 113, 122, 0.1)', 'rgba(113, 113, 122, 0.3)'))
+            
+            risk_col1, risk_col2 = st.columns([1, 2])
+            
+            with risk_col1:
+                # Large risk score display
+                st.markdown(f"""
+<div style="background-color: {bg}; border: 1px solid {border}; border-radius: 12px; padding: 1.5rem; text-align: center;">
+    <p style="color: {color}; font-weight: 700; margin: 0; font-size: 3rem; line-height: 1;">{risk_level}</p>
+    <p style="color: #71717A; margin: 0.5rem 0 0 0; font-size: 0.9rem;">Delay Risk Level</p>
+    <p style="color: {color}; margin: 0.75rem 0 0 0; font-size: 1.25rem; font-weight: 600;">{risk_score:.0f}/100</p>
+    <p style="color: #52525B; margin: 0.25rem 0 0 0; font-size: 0.75rem;">Risk Score (higher = more traffic)</p>
+</div>
+""", unsafe_allow_html=True)
+            
+            with risk_col2:
+                # Context metrics
+                st.metric(
+                    label=f"Traffic for {DAY_NAMES[analysis_day]} at {analysis_hour:02d}:00 UTC",
+                    value=f"{avg_traffic:,.0f}",
+                    delta=f"{pct_vs_avg:+.0f}% vs. average" if pct_vs_avg else "At average"
+                )
+                
+                # Confidence indicator
+                if sample_days >= 10:
+                    confidence = "High confidence"
+                    conf_color = "#22C55E"
+                elif sample_days >= 5:
+                    confidence = "Moderate confidence"
+                    conf_color = "#F59E0B"
+                else:
+                    confidence = "Limited data"
+                    conf_color = "#71717A"
+                
+                st.markdown(f"""
+<p style="color: #71717A; font-size: 0.85rem; margin-top: 0.5rem;">
+    Based on <span style="color: #FAFAFA; font-weight: 500;">{sample_days}</span> historical data points • 
+    <span style="color: {conf_color};">{confidence}</span>
+</p>
+""", unsafe_allow_html=True)
+                
+                # Recommendation
+                if risk_level == 'LOW':
+                    st.markdown(f"""
+<div style="background-color: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; padding: 1rem; margin-top: 1rem; border-left: 3px solid #22C55E;">
+    <p style="color: #22C55E; font-weight: 600; margin: 0 0 0.25rem 0; font-size: 0.85rem;">RECOMMENDATION</p>
+    <p style="color: #FAFAFA; margin: 0; font-size: 0.95rem;">Favorable conditions — proceed with your planned {analysis_hour:02d}:00 UTC departure.</p>
+</div>
+""", unsafe_allow_html=True)
+                elif risk_level == 'MODERATE':
+                    st.markdown(f"""
+<div style="background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 1rem; margin-top: 1rem; border-left: 3px solid #F59E0B;">
+    <p style="color: #F59E0B; font-weight: 600; margin: 0 0 0.25rem 0; font-size: 0.85rem;">RECOMMENDATION</p>
+    <p style="color: #FAFAFA; margin: 0; font-size: 0.95rem;">Moderate congestion expected — departure should proceed, but consider alternatives if flexibility exists.</p>
+</div>
+""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+<div style="background-color: rgba(220, 38, 38, 0.1); border: 1px solid rgba(220, 38, 38, 0.3); border-radius: 8px; padding: 1rem; margin-top: 1rem; border-left: 3px solid #DC2626;">
+    <p style="color: #DC2626; font-weight: 600; margin: 0 0 0.25rem 0; font-size: 0.85rem;">RECOMMENDATION</p>
+    <p style="color: #FAFAFA; margin: 0; font-size: 0.95rem;">High delay risk — strongly recommend rescheduling to a lower-traffic window if possible.</p>
+</div>
+""", unsafe_allow_html=True)
+        else:
+            st.warning("Unable to retrieve risk analysis. Please try again.")
+        
+        # Alternative Windows Panel
+        if not alternatives.empty and not risk_data.empty and risk_data['risk_level'].iloc[0] != 'LOW':
+            render_section_header("Alternative Departure Windows")
+            st.caption(f"Lower-traffic options on {DAY_NAMES[analysis_day]}")
+            
+            alt_cols = st.columns(len(alternatives) if len(alternatives) <= 4 else 4)
+            
+            for idx, (_, alt) in enumerate(alternatives.head(4).iterrows()):
+                with alt_cols[idx]:
+                    alt_hour = int(alt['hour_of_day'])
+                    alt_risk = alt['risk_level']
+                    alt_score = alt['risk_score']
+                    hour_diff = int(alt['hour_distance'])
+                    
+                    alt_color = '#22C55E' if alt_risk == 'LOW' else '#F59E0B' if alt_risk == 'MODERATE' else '#DC2626'
+                    
+                    st.markdown(f"""
+<div style="background-color: #141416; border: 1px solid #27272A; border-radius: 8px; padding: 1rem; text-align: center; border-top: 3px solid {alt_color};">
+    <p style="color: #FAFAFA; font-weight: 600; margin: 0; font-size: 1.25rem;">{alt_hour:02d}:00 UTC</p>
+    <p style="color: {alt_color}; margin: 0.25rem 0; font-size: 0.85rem; font-weight: 500;">{alt_risk}</p>
+    <p style="color: #52525B; margin: 0; font-size: 0.75rem;">{hour_diff}h {'earlier' if alt_hour < analysis_hour else 'later'}</p>
+    <p style="color: #71717A; margin: 0.5rem 0 0 0; font-size: 0.8rem;">Score: {alt_score:.0f}/100</p>
+</div>
+""", unsafe_allow_html=True)
+        
+        # Historical Visualization
+        render_section_header(f"Traffic Pattern: {DAY_NAMES[analysis_day]}")
+        st.caption("See how traffic varies throughout the day — your selected time is highlighted")
+        
+        if not day_pattern.empty:
+            # Build chart with highlighted selected hour
+            congestion_colors = {'LOW': '#22C55E', 'MODERATE': '#F59E0B', 'HIGH': '#DC2626'}
+            
+            fig = go.Figure()
+            
+            for _, row in day_pattern.iterrows():
+                hour = int(row['hour_of_day'])
+                is_selected = (hour == analysis_hour)
+                risk = row['risk_level']
+                
+                fig.add_trace(go.Bar(
+                    x=[hour],
+                    y=[row['avg_traffic']],
+                    marker_color=congestion_colors[risk] if not is_selected else '#FAFAFA',
+                    marker_line_width=3 if is_selected else 0,
+                    marker_line_color='#F59E0B' if is_selected else None,
+                    name=risk,
+                    showlegend=False,
+                    hovertemplate=f"{hour:02d}:00 UTC<br>Avg Traffic: {row['avg_traffic']:,.0f}<br>Risk: {risk}<extra></extra>"
+                ))
+            
+            # Add annotation for selected hour
+            selected_row = day_pattern[day_pattern['hour_of_day'] == analysis_hour]
+            if not selected_row.empty:
+                fig.add_annotation(
+                    x=analysis_hour,
+                    y=selected_row['avg_traffic'].iloc[0],
+                    text="Your Selection",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowcolor='#F59E0B',
+                    font=dict(color='#F59E0B', size=11),
+                    yshift=20
+                )
+            
+            fig.update_layout(
+                height=280,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family="Plus Jakarta Sans, sans-serif", color='#FAFAFA'),
+                xaxis=dict(
+                    tickmode='linear',
+                    tick0=0,
+                    dtick=2,
+                    gridcolor='#27272A',
+                    title=None,
+                    range=[-0.5, 23.5]
+                ),
+                yaxis=dict(gridcolor='#27272A', title=None),
+                margin=dict(l=0, r=0, t=30, b=0),
+                bargap=0.15
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Legend
+            st.markdown("""
+<div style="display: flex; gap: 1.5rem; justify-content: center; margin-top: 0.5rem;">
+    <span style="color: #22C55E; font-size: 0.8rem;">● Low Risk</span>
+    <span style="color: #F59E0B; font-size: 0.8rem;">● Moderate</span>
+    <span style="color: #DC2626; font-size: 0.8rem;">● High Risk</span>
+    <span style="color: #FAFAFA; font-size: 0.8rem;">◼ Selected</span>
+</div>
+""", unsafe_allow_html=True)
 
 # =============================================================================
 # Page: Fleet Overview
@@ -1318,34 +1752,34 @@ elif page == "Aircraft Lookup":
             detail_col1, detail_col2 = st.columns(2)
             
             with detail_col1:
-                st.markdown(f"""
-| Attribute | Value |
-|-----------|-------|
+                    st.markdown(f"""
+                    | Attribute | Value |
+                    |-----------|-------|
 | **Tail Number** | {selected_aircraft} |
-| **Manufacturer** | {aircraft_info['AIRCRAFT_MANUFACTURER']} |
-| **Model** | {aircraft_info['AIRCRAFT_MODEL']} |
-| **Year** | {aircraft_info['AIRCRAFT_YEAR'] or 'N/A'} |
-| **Engine** | {aircraft_info['ENGINE_MANUFACTURER'] or 'N/A'} {aircraft_info['ENGINE_MODEL'] or ''} |
-| **Owner** | {aircraft_info['OWNER_NAME'] or 'N/A'} |
-| **Data Source** | {aircraft_info['SOURCE_TYPE']} |
-""")
-            
-            with detail_col2:
-                with st.spinner("Loading flight history..."):
-                    activity = get_aircraft_activity(selected_aircraft, 50)
+                    | **Manufacturer** | {aircraft_info['AIRCRAFT_MANUFACTURER']} |
+                    | **Model** | {aircraft_info['AIRCRAFT_MODEL']} |
+                    | **Year** | {aircraft_info['AIRCRAFT_YEAR'] or 'N/A'} |
+                    | **Engine** | {aircraft_info['ENGINE_MANUFACTURER'] or 'N/A'} {aircraft_info['ENGINE_MODEL'] or ''} |
+                    | **Owner** | {aircraft_info['OWNER_NAME'] or 'N/A'} |
+                    | **Data Source** | {aircraft_info['SOURCE_TYPE']} |
+                    """)
                 
-                if not activity.empty:
-                    air_count = len(activity[activity['AIR_GROUND_STATUS'] == 'AIR'])
-                    ground_count = len(activity[activity['AIR_GROUND_STATUS'] == 'GROUND'])
+            with detail_col2:
+                    with st.spinner("Loading flight history..."):
+                        activity = get_aircraft_activity(selected_aircraft, 50)
                     
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Records", len(activity))
-                    m2.metric("In Air", air_count)
-                    m3.metric("On Ground", ground_count)
-                    
-                    st.dataframe(
-                        activity[['RECORD_TS', 'FLIGHT_CALLSIGN', 'ALTITUDE_BARO', 'GROUND_SPEED', 'AIR_GROUND_STATUS']].head(10),
-                        use_container_width=True,
+                    if not activity.empty:
+                        air_count = len(activity[activity['AIR_GROUND_STATUS'] == 'AIR'])
+                        ground_count = len(activity[activity['AIR_GROUND_STATUS'] == 'GROUND'])
+                        
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Records", len(activity))
+                        m2.metric("In Air", air_count)
+                        m3.metric("On Ground", ground_count)
+                        
+                        st.dataframe(
+                            activity[['RECORD_TS', 'FLIGHT_CALLSIGN', 'ALTITUDE_BARO', 'GROUND_SPEED', 'AIR_GROUND_STATUS']].head(10),
+                            use_container_width=True,
                         hide_index=True,
                         column_config={
                             "RECORD_TS": st.column_config.DatetimeColumn("Timestamp", format="MMM D, HH:mm"),
@@ -1354,9 +1788,9 @@ elif page == "Aircraft Lookup":
                             "GROUND_SPEED": st.column_config.NumberColumn("Speed", format="%d kts"),
                             "AIR_GROUND_STATUS": "Status"
                         }
-                    )
-                else:
-                    st.caption("No recent activity found.")
+                        )
+                    else:
+                        st.caption("No recent activity found.")
             
             # Clear selection button
             if st.button("Clear Selection", type="secondary"):
