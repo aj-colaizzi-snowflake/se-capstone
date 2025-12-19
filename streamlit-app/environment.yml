@@ -1,0 +1,7 @@
+name: dk_aviation_streamlit
+channels:
+  - snowflake
+dependencies:
+  - plotly
+  - pandas
+
