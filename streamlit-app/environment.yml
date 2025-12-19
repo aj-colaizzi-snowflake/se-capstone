@@ -1,7 +1,7 @@
-name: dk_aviation_streamlit
+name: sf_env
 channels:
   - snowflake
 dependencies:
   - plotly
   - pandas
-
+  - streamlit
