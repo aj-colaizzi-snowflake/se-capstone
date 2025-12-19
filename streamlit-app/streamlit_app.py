@@ -1065,7 +1065,7 @@ if page == "Operations Hub":
     with status_col1:
         # Determine current traffic level
         if not current_stats.empty:
-            pct_change = current_stats['pct_vs_average'].iloc[0]
+            pct_change = current_stats['PCT_VS_AVERAGE'].iloc[0]
             if pct_change > 20:
                 traffic_status = "HIGH"
                 status_desc = f"{pct_change:.0f}% above normal"
@@ -1082,7 +1082,7 @@ if page == "Operations Hub":
     
     with status_col2:
         if not recent_activity.empty:
-            aircraft_count = recent_activity['aircraft_last_hour'].iloc[0]
+            aircraft_count = recent_activity['AIRCRAFT_LAST_HOUR'].iloc[0]
             st.metric(
                 label="Active Aircraft",
                 value=f"{aircraft_count:,.0f}",
@@ -1093,7 +1093,7 @@ if page == "Operations Hub":
     
     with status_col3:
         if not recent_activity.empty:
-            last_record = recent_activity['last_record_time'].iloc[0]
+            last_record = recent_activity['LAST_RECORD_TIME'].iloc[0]
             st.metric(
                 label="Data Freshness",
                 value="Live",
@@ -1112,16 +1112,16 @@ if page == "Operations Hub":
     
     # Quick Recommendation
     if not optimal_windows.empty:
-        from datetime import datetime
-        current_hour = datetime.utcnow().hour
+        from datetime import datetime, timezone
+        current_hour = datetime.now(timezone.utc).hour
         
         # Find current hour's congestion level
-        current_congestion = optimal_windows[optimal_windows['hour_of_day'] == current_hour]
+        current_congestion = optimal_windows[optimal_windows['HOUR_OF_DAY'] == current_hour]
         if not current_congestion.empty:
-            level = current_congestion['congestion_level'].iloc[0]
+            level = current_congestion['CONGESTION_LEVEL'].iloc[0]
             
             # Find next low-traffic window
-            low_windows = optimal_windows[optimal_windows['congestion_level'] == 'LOW']['hour_of_day'].tolist()
+            low_windows = optimal_windows[optimal_windows['CONGESTION_LEVEL'] == 'LOW']['HOUR_OF_DAY'].tolist()
             future_low = [h for h in low_windows if h > current_hour]
             next_low = future_low[0] if future_low else (low_windows[0] if low_windows else None)
             
@@ -1146,12 +1146,12 @@ if page == "Operations Hub":
             
             for _, row in optimal_windows.iterrows():
                 fig.add_trace(go.Bar(
-                    x=[row['hour_of_day']],
-                    y=[row['avg_hourly_traffic']],
-                    marker_color=congestion_colors[row['congestion_level']],
-                    name=row['congestion_level'],
+                    x=[row['HOUR_OF_DAY']],
+                    y=[row['AVG_HOURLY_TRAFFIC']],
+                    marker_color=congestion_colors[row['CONGESTION_LEVEL']],
+                    name=row['CONGESTION_LEVEL'],
                     showlegend=False,
-                    hovertemplate=f"{int(row['hour_of_day']):02d}:00 UTC<br>Traffic: {row['avg_hourly_traffic']:,.0f}<br>Level: {row['congestion_level']}<extra></extra>"
+                    hovertemplate=f"{int(row['HOUR_OF_DAY']):02d}:00 UTC<br>Traffic: {row['AVG_HOURLY_TRAFFIC']:,.0f}<br>Level: {row['CONGESTION_LEVEL']}<extra></extra>"
                 ))
             
             fig.update_layout(
@@ -1206,11 +1206,11 @@ if page == "Operations Hub":
     if not activity_trend.empty:
         fig = px.area(
             activity_trend,
-            x='hour_bucket',
-            y='unique_aircraft',
+            x='HOUR_BUCKET',
+            y='UNIQUE_AIRCRAFT',
             labels={
-                'hour_bucket': 'Time',
-                'unique_aircraft': 'Active Aircraft'
+                'HOUR_BUCKET': 'Time',
+                'UNIQUE_AIRCRAFT': 'Active Aircraft'
             }
         )
         fig.update_traces(
@@ -1295,11 +1295,11 @@ elif page == "Trip Planner":
         render_section_header("Risk Assessment")
         
         if not risk_data.empty:
-            risk_level = risk_data['risk_level'].iloc[0]
-            risk_score = risk_data['risk_score'].iloc[0]
-            pct_vs_avg = risk_data['pct_vs_average'].iloc[0]
-            avg_traffic = risk_data['avg_traffic'].iloc[0]
-            sample_days = risk_data['sample_days'].iloc[0]
+            risk_level = risk_data['RISK_LEVEL'].iloc[0]
+            risk_score = risk_data['RISK_SCORE'].iloc[0]
+            pct_vs_avg = risk_data['PCT_VS_AVERAGE'].iloc[0]
+            avg_traffic = risk_data['AVG_TRAFFIC'].iloc[0]
+            sample_days = risk_data['SAMPLE_DAYS'].iloc[0]
             
             # Risk colors
             risk_colors = {
@@ -1374,7 +1374,7 @@ elif page == "Trip Planner":
             st.warning("Unable to retrieve risk analysis. Please try again.")
         
         # Alternative Windows Panel
-        if not alternatives.empty and not risk_data.empty and risk_data['risk_level'].iloc[0] != 'LOW':
+        if not alternatives.empty and not risk_data.empty and risk_data['RISK_LEVEL'].iloc[0] != 'LOW':
             render_section_header("Alternative Departure Windows")
             st.caption(f"Lower-traffic options on {DAY_NAMES[analysis_day]}")
             
@@ -1382,10 +1382,10 @@ elif page == "Trip Planner":
             
             for idx, (_, alt) in enumerate(alternatives.head(4).iterrows()):
                 with alt_cols[idx]:
-                    alt_hour = int(alt['hour_of_day'])
-                    alt_risk = alt['risk_level']
-                    alt_score = alt['risk_score']
-                    hour_diff = int(alt['hour_distance'])
+                    alt_hour = int(alt['HOUR_OF_DAY'])
+                    alt_risk = alt['RISK_LEVEL']
+                    alt_score = alt['RISK_SCORE']
+                    hour_diff = int(alt['HOUR_DISTANCE'])
                     
                     alt_color = '#22C55E' if alt_risk == 'LOW' else '#F59E0B' if alt_risk == 'MODERATE' else '#DC2626'
                     
@@ -1409,27 +1409,27 @@ elif page == "Trip Planner":
             fig = go.Figure()
             
             for _, row in day_pattern.iterrows():
-                hour = int(row['hour_of_day'])
+                hour = int(row['HOUR_OF_DAY'])
                 is_selected = (hour == analysis_hour)
-                risk = row['risk_level']
+                risk = row['RISK_LEVEL']
                 
                 fig.add_trace(go.Bar(
                     x=[hour],
-                    y=[row['avg_traffic']],
+                    y=[row['AVG_TRAFFIC']],
                     marker_color=congestion_colors[risk] if not is_selected else '#FAFAFA',
                     marker_line_width=3 if is_selected else 0,
                     marker_line_color='#F59E0B' if is_selected else None,
                     name=risk,
                     showlegend=False,
-                    hovertemplate=f"{hour:02d}:00 UTC<br>Avg Traffic: {row['avg_traffic']:,.0f}<br>Risk: {risk}<extra></extra>"
+                    hovertemplate=f"{hour:02d}:00 UTC<br>Avg Traffic: {row['AVG_TRAFFIC']:,.0f}<br>Risk: {risk}<extra></extra>"
                 ))
             
             # Add annotation for selected hour
-            selected_row = day_pattern[day_pattern['hour_of_day'] == analysis_hour]
+            selected_row = day_pattern[day_pattern['HOUR_OF_DAY'] == analysis_hour]
             if not selected_row.empty:
                 fig.add_annotation(
                     x=analysis_hour,
-                    y=selected_row['avg_traffic'].iloc[0],
+                    y=selected_row['AVG_TRAFFIC'].iloc[0],
                     text="Your Selection",
                     showarrow=True,
                     arrowhead=2,
@@ -1505,9 +1505,9 @@ elif page == "Fleet Overview":
         st.caption(f"Data coverage: {metrics['EARLIEST_RECORD'].iloc[0]} to {metrics['LATEST_RECORD'].iloc[0]}")
         
         # Current Activity Insight
-        if not current_stats.empty and current_stats['current_count'].iloc[0] > 0:
-            pct_change = current_stats['pct_vs_average'].iloc[0]
-            current_aircraft = current_stats['current_aircraft'].iloc[0]
+        if not current_stats.empty and current_stats['CURRENT_COUNT'].iloc[0] > 0:
+            pct_change = current_stats['PCT_VS_AVERAGE'].iloc[0]
+            current_aircraft = current_stats['CURRENT_AIRCRAFT'].iloc[0]
             if pct_change > 10:
                 render_insight(f"Current Activity: {current_aircraft:,.0f} aircraft active in the last hour — {pct_change:+.0f}% above typical for this time of day")
             elif pct_change < -10:
@@ -1570,7 +1570,7 @@ elif page == "Fleet Overview":
         if not pipeline_data.empty:
             fig = px.pie(
                 pipeline_data,
-                values='total_records',
+                values='TOTAL_RECORDS',
                 names='SOURCE_TYPE',
                 color_discrete_sequence=['#F59E0B', '#3B82F6'],
                 hole=0.5
@@ -1596,16 +1596,16 @@ elif page == "Fleet Overview":
             
             # Pipeline status metrics
             for _, row in pipeline_data.iterrows():
-                freshness = row['minutes_since_last']
+                freshness = row['MINUTES_SINCE_LAST']
                 status = "streaming" if freshness < 60 else f"{freshness:.0f}m ago"
                 st.metric(
-                    label=f"{row['SOURCE_TYPE']} ({row['unique_aircraft']:,.0f} aircraft)",
-                    value=f"{row['total_records']:,.0f}",
+                    label=f"{row['SOURCE_TYPE']} ({row['UNIQUE_AIRCRAFT']:,.0f} aircraft)",
+                    value=f"{row['TOTAL_RECORDS']:,.0f}",
                     delta=status
                 )
             
             # Pipeline health insight
-            all_fresh = all(pipeline_data['minutes_since_last'] < 60)
+            all_fresh = all(pipeline_data['MINUTES_SINCE_LAST'] < 60)
             if all_fresh:
                 render_insight("Pipeline Status: All receiver firmware formats streaming data successfully")
 
@@ -1815,8 +1815,8 @@ elif page == "Traffic Analysis":
     
     if not optimal_windows.empty:
         # Identify low traffic windows
-        low_traffic_hours = optimal_windows[optimal_windows['congestion_level'] == 'LOW']['hour_of_day'].tolist()
-        high_traffic_hours = optimal_windows[optimal_windows['congestion_level'] == 'HIGH']['hour_of_day'].tolist()
+        low_traffic_hours = optimal_windows[optimal_windows['CONGESTION_LEVEL'] == 'LOW']['HOUR_OF_DAY'].tolist()
+        high_traffic_hours = optimal_windows[optimal_windows['CONGESTION_LEVEL'] == 'HIGH']['HOUR_OF_DAY'].tolist()
         
         # Format hour ranges
         def format_hour(h):
@@ -1847,18 +1847,18 @@ elif page == "Traffic Analysis":
         # Congestion heatmap by hour
         # Create color mapping for congestion levels
         congestion_colors = {'LOW': '#22C55E', 'MODERATE': '#F59E0B', 'HIGH': '#DC2626'}
-        optimal_windows['color'] = optimal_windows['congestion_level'].map(congestion_colors)
+        optimal_windows['color'] = optimal_windows['CONGESTION_LEVEL'].map(congestion_colors)
         
         fig = px.bar(
             optimal_windows,
-            x='hour_of_day',
-            y='avg_hourly_traffic',
-            color='congestion_level',
+            x='HOUR_OF_DAY',
+            y='AVG_HOURLY_TRAFFIC',
+            color='CONGESTION_LEVEL',
             color_discrete_map=congestion_colors,
             labels={
-                'hour_of_day': 'Hour (UTC)',
-                'avg_hourly_traffic': 'Avg Traffic',
-                'congestion_level': 'Congestion'
+                'HOUR_OF_DAY': 'Hour (UTC)',
+                'AVG_HOURLY_TRAFFIC': 'Avg Traffic',
+                'CONGESTION_LEVEL': 'Congestion'
             }
         )
         fig.update_layout(
@@ -1898,13 +1898,13 @@ elif page == "Traffic Analysis":
         with col_dow1:
             fig = px.bar(
                 day_of_week_data,
-                x='day_name',
-                y='avg_daily_records',
-                color='avg_daily_records',
+                x='DAY_NAME',
+                y='AVG_DAILY_RECORDS',
+                color='AVG_DAILY_RECORDS',
                 color_continuous_scale=[[0, '#27272A'], [0.5, '#F59E0B'], [1, '#DC2626']],
                 labels={
-                    'day_name': 'Day',
-                    'avg_daily_records': 'Avg Daily Traffic'
+                    'DAY_NAME': 'Day',
+                    'AVG_DAILY_RECORDS': 'Avg Daily Traffic'
                 }
             )
             fig.update_layout(
@@ -1922,18 +1922,18 @@ elif page == "Traffic Analysis":
         
         with col_dow2:
             # Find busiest and slowest days
-            busiest_day = day_of_week_data.loc[day_of_week_data['avg_daily_records'].idxmax()]
-            slowest_day = day_of_week_data.loc[day_of_week_data['avg_daily_records'].idxmin()]
+            busiest_day = day_of_week_data.loc[day_of_week_data['AVG_DAILY_RECORDS'].idxmax()]
+            slowest_day = day_of_week_data.loc[day_of_week_data['AVG_DAILY_RECORDS'].idxmin()]
             
             st.metric(
                 label="Busiest Day",
-                value=busiest_day['day_name'],
-                delta=f"{busiest_day['avg_daily_records']:,.0f} avg records"
+                value=busiest_day['DAY_NAME'],
+                delta=f"{busiest_day['AVG_DAILY_RECORDS']:,.0f} avg records"
             )
             st.metric(
                 label="Slowest Day", 
-                value=slowest_day['day_name'],
-                delta=f"{slowest_day['avg_daily_records']:,.0f} avg records"
+                value=slowest_day['DAY_NAME'],
+                delta=f"{slowest_day['AVG_DAILY_RECORDS']:,.0f} avg records"
             )
     
     # Fleet Activity Status
